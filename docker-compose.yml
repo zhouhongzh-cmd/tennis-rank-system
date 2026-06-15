@@ -6,7 +6,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      TENNIS_ADMIN_PASSWORD: "请改成强密码"
+      TENNIS_ADMIN_PASSWORD: "666666"
       TENNIS_DB_FILE: "/data/tennis.db"
       PORT: "3000"
     volumes:
