@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "backup:db": "node scripts/backup-db.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.1",

@@ -145,9 +145,29 @@ async function readBody(req) {
   return JSON.parse(raw);
 }
 
+function safeJsonForHtml(value) {
+  return JSON.stringify(value)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026')
+    .replaceAll('\\u2028', '\\u2028')
+    .replaceAll('\\u2029', '\\u2029');
+}
+
 function sendHtml(res) {
   readFile(HTML_FILE, 'utf8')
-    .then((html) => text(res, 200, html, 'text/html; charset=utf-8'))
+    .then((html) => {
+      const bootstrap = safeJsonForHtml({ state: exportState() });
+      const body = html.replace(
+        'window.__TENNIS_BOOTSTRAP__ = null;',
+        `window.__TENNIS_BOOTSTRAP__ = ${bootstrap};`,
+      );
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=30, s-maxage=60',
+      });
+      res.end(body);
+    })
     .catch((err) => text(res, 500, `无法读取页面: ${err.message}`));
 }
 

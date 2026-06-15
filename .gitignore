@@ -12,3 +12,7 @@ tennis-data.json
 # Local environment
 .env
 .env.*
+
+# Local runtime process files
+.openclaw-tennis.pid
+*.log

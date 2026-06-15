@@ -54,6 +54,28 @@ docker compose restart
 docker compose down
 ```
 
+### 数据库备份
+
+项目内置了 SQLite 在线备份脚本，可在服务运行时执行：
+
+```bash
+npm run backup:db
+```
+
+可选环境变量：
+
+```bash
+TENNIS_DB_FILE=/data/tennis.db
+TENNIS_BACKUP_DIR=/data/backups
+TENNIS_BACKUP_RETENTION_DAYS=30
+```
+
+这个脚本会：
+
+- 生成带时间戳的数据库备份
+- 默认保留最近 30 天
+- 自动清理过期备份
+
 ### 方式二：docker run
 
 ```bash
