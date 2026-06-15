@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
@@ -13,6 +13,10 @@ const PORT = Number(process.env.PORT || 3000);
 const DB_FILE = process.env.TENNIS_DB_FILE || path.join(__dirname, 'tennis.db');
 const HTML_FILE = path.join(__dirname, 'tennis_ranks.html');
 const PASSWORD = process.env.TENNIS_ADMIN_PASSWORD;
+const COOKIE_SECURE = process.env.TENNIS_COOKIE_SECURE === '1';
+const TRUST_PROXY = process.env.TENNIS_TRUST_PROXY === '1';
+const LOGIN_WINDOW_MS = Number(process.env.TENNIS_LOGIN_WINDOW_MS || 60_000);
+const LOGIN_MAX_FAILURES = Number(process.env.TENNIS_LOGIN_MAX_FAILURES || 8);
 const SESSION_COOKIE = 'tennis_auth';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const INIT = 1500;
@@ -20,6 +24,7 @@ const K = 24;
 const WEIGHT = { tiebreak7: 0.45, tiebreak11: 0.60, short4: 0.80, standard_set: 1.00 };
 
 const sessions = new Map();
+const loginFailures = new Map();
 const db = new Database(DB_FILE);
 db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
@@ -76,8 +81,18 @@ CREATE TABLE IF NOT EXISTS rating_history (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  ip TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_match_mode_date ON matches(mode, date, id);
 CREATE INDEX IF NOT EXISTS idx_rh_player_mode ON rating_history(player_id, mode);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 `);
 
 function json(res, status, body) {
@@ -119,8 +134,71 @@ function setCookie(res, name, value, options = {}) {
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
-function clearCookie(res, name) {
-  res.setHeader('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+function clearCookie(res, name, options = {}) {
+  const parts = [`${name}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+  if (options.secure) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function normalizeIp(value) {
+  return String(value || '').trim().replace(/^::ffff:/, '');
+}
+
+function getClientIp(req) {
+  if (TRUST_PROXY) {
+    const cfIp = normalizeIp(req.headers['cf-connecting-ip']);
+    if (cfIp) return cfIp;
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',').map(normalizeIp).find(Boolean);
+    if (xff) return xff;
+  }
+  return normalizeIp(req.socket.remoteAddress || 'unknown') || 'unknown';
+}
+
+function audit(action, detail = {}, req = null) {
+  try {
+    db.prepare(`
+      INSERT INTO audit_log (action, detail, ip, user_agent, created_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+    `).run(
+      action,
+      JSON.stringify(detail),
+      req ? getClientIp(req) : null,
+      req ? String(req.headers['user-agent'] || '') : null,
+    );
+  } catch (err) {
+    console.warn(`[tennis] audit skipped: ${err.message}`);
+  }
+}
+
+function hashText(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function safeComparePassword(candidate) {
+  const a = Buffer.from(hashText(String(candidate || '')));
+  const b = Buffer.from(hashText(String(PASSWORD || '')));
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function loginLimitStatus(ip) {
+  const now = Date.now();
+  const row = loginFailures.get(ip);
+  if (!row || row.resetAt <= now) return { limited: false, count: 0, resetAt: now + LOGIN_WINDOW_MS };
+  return { limited: row.count >= LOGIN_MAX_FAILURES, count: row.count, resetAt: row.resetAt };
+}
+
+function recordLoginFailure(ip) {
+  const now = Date.now();
+  const row = loginFailures.get(ip);
+  if (!row || row.resetAt <= now) {
+    loginFailures.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return;
+  }
+  row.count += 1;
+}
+
+function clearLoginFailures(ip) {
+  loginFailures.delete(ip);
 }
 
 function authStatus(req) {
@@ -174,20 +252,20 @@ function sendHtml(res) {
 function issueSession(res) {
   const token = createHash('sha256').update(randomUUID()).digest('hex');
   sessions.set(token, Date.now() + SESSION_TTL_MS);
-  setCookie(res, SESSION_COOKIE, token, { maxAge: SESSION_TTL_MS });
+  setCookie(res, SESSION_COOKIE, token, { maxAge: SESSION_TTL_MS, secure: COOKIE_SECURE });
 }
 
 function revokeSession(req, res) {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (token) sessions.delete(token);
-  clearCookie(res, SESSION_COOKIE);
+  clearCookie(res, SESSION_COOKIE, { secure: COOKIE_SECURE });
 }
 
-function expected(rTeam, rOpp) {
+export function expected(rTeam, rOpp) {
   return 1 / (1 + Math.pow(10, (rOpp - rTeam) / 400));
 }
 
-function scoreMultiplier(type, sa, sb) {
+export function scoreMultiplier(type, sa, sb) {
   const w = Math.max(sa, sb);
   const l = Math.min(sa, sb);
   const d = w - l;
@@ -201,6 +279,40 @@ function scoreMultiplier(type, sa, sb) {
   return 1.0;
 }
 
+export function validateScoreByType(type, sa, sb) {
+  if (!Number.isInteger(sa) || !Number.isInteger(sb) || sa < 0 || sb < 0) return '比分必须是非负整数';
+  if (sa === sb) return '比分不能相同（必须分出胜负）';
+  const w = Math.max(sa, sb);
+  const l = Math.min(sa, sb);
+  const d = w - l;
+
+  if (type === 'tiebreak7') {
+    if (w < 7) return '抢 7 胜方至少为 7 分';
+    if (w === 7 && l <= 5) return null;
+    if (w > 7 && d === 2) return null;
+    return '抢 7 必须 7 分封顶且净胜至少 2 分，或延长后净胜 2 分';
+  }
+
+  if (type === 'tiebreak11') {
+    if (w < 11) return '抢 11 胜方至少为 11 分';
+    if (w === 11 && l <= 9) return null;
+    if (w > 11 && d === 2) return null;
+    return '抢 11 必须 11 分封顶且净胜至少 2 分，或延长后净胜 2 分';
+  }
+
+  if (type === 'short4') {
+    if ((w === 4 && l <= 3) || (w === 5 && l <= 4)) return null;
+    return '四局短盘仅允许 4:0–4:3 或 5:0–5:4';
+  }
+
+  if (type === 'standard_set') {
+    if ((w === 6 && l <= 4) || (w === 7 && (l === 5 || l === 6))) return null;
+    return '标准一盘仅允许 6:0–6:4、7:5 或 7:6';
+  }
+
+  return '赛制无效';
+}
+
 function normalizeTeam(team, mode, label) {
   if (!Array.isArray(team)) throw new Error(`${label} 队数据无效`);
   const expectedCount = mode === 'doubles' ? 2 : 1;
@@ -211,7 +323,7 @@ function normalizeTeam(team, mode, label) {
   return ids;
 }
 
-function computeMatchDeltas(ratings, match) {
+export function computeMatchDeltas(ratings, match) {
   const ra = match.a.reduce((sum, id) => sum + ratings[id], 0) / match.a.length;
   const rb = match.b.reduce((sum, id) => sum + ratings[id], 0) / match.b.length;
   const eA = expected(ra, rb);
@@ -224,7 +336,7 @@ function computeMatchDeltas(ratings, match) {
   return out;
 }
 
-function exportState() {
+export function exportState() {
   const players = db.prepare(`
     SELECT id, name, created_at, updated_at
     FROM players
@@ -260,7 +372,31 @@ function exportState() {
     created_at: row.created_at,
   }));
 
-  return { players, matches };
+  const state = { players, matches };
+  state.version = stateVersion(state);
+  return state;
+}
+
+function stateVersion(state) {
+  return createHash('sha256')
+    .update(JSON.stringify({ players: state.players || [], matches: state.matches || [] }))
+    .digest('hex');
+}
+
+function stateSummary(state) {
+  return {
+    players: Array.isArray(state?.players) ? state.players.length : 0,
+    matches: Array.isArray(state?.matches) ? state.matches.length : 0,
+    version: state?.version || null,
+  };
+}
+
+export class StateConflictError extends Error {
+  constructor(message = '数据已被其他人更新，请刷新后重试') {
+    super(message);
+    this.name = 'StateConflictError';
+    this.statusCode = 409;
+  }
 }
 
 function rebuildDerivedTables() {
@@ -345,8 +481,12 @@ function rebuildDerivedTables() {
   }
 }
 
-const rewriteState = db.transaction((payload) => {
+export const rewriteState = db.transaction((payload) => {
   if (!payload || typeof payload !== 'object') throw new Error('无效的数据格式');
+  const current = exportState();
+  if (!payload.version || payload.version !== current.version) {
+    throw new StateConflictError();
+  }
   const playersInput = Array.isArray(payload.players) ? payload.players : [];
   const matchesInput = Array.isArray(payload.matches) ? payload.matches : [];
 
@@ -406,8 +546,8 @@ const rewriteState = db.transaction((payload) => {
     const date = String(match.date || '').trim() || now.slice(0, 10);
     const sa = Number(match.sa);
     const sb = Number(match.sb);
-    if (!Number.isInteger(sa) || !Number.isInteger(sb)) throw new Error(`比赛 ${index + 1} 比分无效`);
-    if (sa === sb) throw new Error(`比赛 ${index + 1} 比分不能相同`);
+    const scoreError = validateScoreByType(type, sa, sb);
+    if (scoreError) throw new Error(`比赛 ${index + 1} ${scoreError}`);
     const note = match.note == null ? null : String(match.note);
     const created_at = String(match.created_at || match.created || now);
     return {
@@ -498,22 +638,37 @@ function route(req, res) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/login') {
+    const ip = getClientIp(req);
+    const limit = loginLimitStatus(ip);
+    if (limit.limited) {
+      audit('login_rate_limited', { resetAt: new Date(limit.resetAt).toISOString() }, req);
+      json(res, 429, { error: '登录失败次数过多，请稍后再试' });
+      return;
+    }
     readBody(req)
       .then((body) => {
         const password = String(body.password || '');
-        if (password !== PASSWORD) {
+        if (!safeComparePassword(password)) {
+          recordLoginFailure(ip);
+          audit('login_failed', {}, req);
           json(res, 401, { error: '密码错误' });
           return;
         }
+        clearLoginFailures(ip);
         issueSession(res);
+        audit('login_success', {}, req);
         json(res, 200, { ok: true, canWrite: true });
       })
-      .catch((err) => json(res, 400, { error: err.message || '登录失败' }));
+      .catch((err) => {
+        audit('login_error', { error: err.message || '登录失败' }, req);
+        json(res, 400, { error: err.message || '登录失败' });
+      });
     return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/logout') {
     revokeSession(req, res);
+    audit('logout', {}, req);
     json(res, 200, { ok: true });
     return;
   }
@@ -525,10 +680,16 @@ function route(req, res) {
     }
     readBody(req)
       .then((body) => {
+        const before = exportState();
         const state = rewriteState(body);
+        audit('state_saved', { before: stateSummary(before), after: stateSummary(state) }, req);
         json(res, 200, state);
       })
-      .catch((err) => json(res, 400, { error: err.message || '保存失败' }));
+      .catch((err) => {
+        const status = err.statusCode || 400;
+        audit(status === 409 ? 'state_conflict' : 'state_save_failed', { error: err.message || '保存失败' }, req);
+        json(res, status, { error: err.message || '保存失败' });
+      });
     return;
   }
 
@@ -544,6 +705,9 @@ if (!PASSWORD) {
   process.exit(1);
 }
 
-http.createServer(route).listen(PORT, () => {
-  console.log(`[tennis] listening on http://127.0.0.1:${PORT}`);
-});
+if (process.env.TENNIS_NO_LISTEN !== '1') {
+  http.createServer(route).listen(PORT, () => {
+    console.log(`[tennis] listening on 0.0.0.0:${PORT}`);
+  });
+}
+

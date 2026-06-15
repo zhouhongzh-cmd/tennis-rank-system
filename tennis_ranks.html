@@ -448,7 +448,7 @@ const today = () => new Date().toISOString().slice(0,10);
 
 /* ====================== 数据存取 ====================== */
 window.__TENNIS_BOOTSTRAP__ = null;
-let PLAYERS=[], MATCHES=[];
+let PLAYERS=[], MATCHES=[], STATE_VERSION=null;
 let mode="doubles", recMode="doubles", curView="board", CAN_WRITE=false;
 
 async function api(path, opts={}){
@@ -473,6 +473,7 @@ async function load(){
     const state = boot.state;
     PLAYERS = Array.isArray(state.players) ? state.players : [];
     MATCHES = Array.isArray(state.matches) ? state.matches : [];
+    STATE_VERSION = state.version || null;
     CAN_WRITE = false;
     api("/api/me").then(me=>{
       CAN_WRITE = !!(me && me.canWrite);
@@ -489,6 +490,7 @@ async function load(){
   const state = await api("/api/state");
   PLAYERS = Array.isArray(state.players) ? state.players : [];
   MATCHES = Array.isArray(state.matches) ? state.matches : [];
+  STATE_VERSION = state.version || null;
   CAN_WRITE = false;
   api("/api/me").then(me=>{
     CAN_WRITE = !!(me && me.canWrite);
@@ -505,12 +507,20 @@ async function persistState(){
   if(!CAN_WRITE){ toast("请先输入密码", true); return false; }
   return await api("/api/state", {
     method:"PUT",
-    body: JSON.stringify({ players: PLAYERS, matches: MATCHES })
+    body: JSON.stringify({ players: PLAYERS, matches: MATCHES, version: STATE_VERSION })
   });
 }
 function applyState(state){
   if(state && Array.isArray(state.players)) PLAYERS = state.players;
   if(state && Array.isArray(state.matches)) MATCHES = state.matches;
+  if(state && state.version) STATE_VERSION = state.version;
+}
+function handleSaveError(e){
+  const msg = e && e.message ? e.message : "保存失败，请重试";
+  toast(msg, true);
+  if(msg.includes("其他人更新") || msg.includes("刷新后重试")){
+    setTimeout(()=>{ if(confirm("数据已被其他人更新。为避免覆盖他人记录，请刷新页面后重新录入。现在刷新吗？")) location.reload(); }, 50);
+  }
 }
 function refreshAfterSave(){
   renderBoard();
@@ -527,7 +537,7 @@ async function savePlayers(){
     applyState(state);
     refreshAfterSave();
     return state;
-  }catch(e){ toast(e.message || "保存失败，请重试", true); throw e; }
+  }catch(e){ handleSaveError(e); throw e; }
 }
 async function saveMatches(){
   try{
@@ -535,7 +545,7 @@ async function saveMatches(){
     applyState(state);
     refreshAfterSave();
     return state;
-  }catch(e){ toast(e.message || "保存失败，请重试", true); throw e; }
+  }catch(e){ handleSaveError(e); throw e; }
 }
 function requireWrite(){
   if(CAN_WRITE) return true;
@@ -685,12 +695,39 @@ function gatherForm(){
   return { mode:recMode, type:val("f-type"), a, b,
     sa:numv("f-sa"), sb:numv("f-sb"), date:val("f-date")||today(), note:val("f-note") };
 }
+
+function validateScoreByType(type, sa, sb){
+  if(!Number.isInteger(sa)||!Number.isInteger(sb)||sa<0||sb<0) return "比分必须是非负整数";
+  if(sa===sb) return "比分不能相同（必须分出胜负）";
+  const w=Math.max(sa,sb), l=Math.min(sa,sb), d=w-l;
+  if(type==="tiebreak7"){
+    if(w<7) return "抢 7 胜方至少为 7 分";
+    if((w===7&&l<=5)||(w>7&&d===2)) return null;
+    return "抢 7 必须 7 分封顶且净胜至少 2 分，或延长后净胜 2 分";
+  }
+  if(type==="tiebreak11"){
+    if(w<11) return "抢 11 胜方至少为 11 分";
+    if((w===11&&l<=9)||(w>11&&d===2)) return null;
+    return "抢 11 必须 11 分封顶且净胜至少 2 分，或延长后净胜 2 分";
+  }
+  if(type==="short4"){
+    if((w===4&&l<=3)||(w===5&&l<=4)) return null;
+    return "四局短盘仅允许 4:0–4:3 或 5:0–5:4";
+  }
+  if(type==="standard_set"){
+    if((w===6&&l<=4)||(w===7&&(l===5||l===6))) return null;
+    return "标准一盘仅允许 6:0–6:4、7:5 或 7:6";
+  }
+  return "赛制无效";
+}
+
 function formError(m){
   const ids=[...m.a,...m.b];
   if(ids.some(x=>!x)) return "请选择全部球员";
   if(new Set(ids).size!==ids.length) return "同一人不能重复出现";
   if(m.sa===null||m.sb===null) return "请填写双方比分";
-  if(m.sa===m.sb) return "比分不能相同（必须分出胜负）";
+  const scoreError = validateScoreByType(m.type, m.sa, m.sb);
+  if(scoreError) return scoreError;
   return null;
 }
 function renderPreview(){

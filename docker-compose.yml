@@ -6,8 +6,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      TENNIS_ADMIN_PASSWORD: "666666"
+      TENNIS_ADMIN_PASSWORD: "${TENNIS_ADMIN_PASSWORD:?set TENNIS_ADMIN_PASSWORD}"
       TENNIS_DB_FILE: "/data/tennis.db"
+      TENNIS_COOKIE_SECURE: "1"
+      TENNIS_TRUST_PROXY: "1"
       PORT: "3000"
     volumes:
       - ./data:/data

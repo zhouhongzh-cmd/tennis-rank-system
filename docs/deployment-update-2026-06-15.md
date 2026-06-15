@@ -7,7 +7,7 @@
 - 公网地址：`https://tennis.21481812.xyz/`
 - 本机/Tailscale 地址：`http://100.88.114.27:3000/`
 - Docker 容器名：`tennis-ranks`
-- 管理密码环境变量：`TENNIS_ADMIN_PASSWORD=666666`
+- 管理密码环境变量：`TENNIS_ADMIN_PASSWORD=<管理密码>`
 - SQLite 数据库挂载目录：`./data:/data`
 
 由于 Docker Hub 拉取 `node:22-bookworm-slim` 在当前网络下出现 TLS handshake timeout，本次构建使用本机已有的 `ghcr.io/decolua/9router:latest` 作为 Node 22 基础镜像，并通过 `Dockerfile.local` 构建 `tennis-ranks:latest`。
@@ -26,7 +26,7 @@ docker run -d \
   --name tennis-ranks \
   --restart unless-stopped \
   -p 3000:3000 \
-  -e TENNIS_ADMIN_PASSWORD=666666 \
+  -e TENNIS_ADMIN_PASSWORD=<管理密码> \
   -e TENNIS_DB_FILE=/data/tennis.db \
   -e PORT=3000 \
   -v "$PWD/data:/data" \
@@ -195,3 +195,67 @@ TENNIS_BACKUP_DIR="$PWD/data/backups" \
 TENNIS_BACKUP_RETENTION_DAYS=30 \
 node scripts/backup-db.mjs
 ```
+
+
+## 2026-06-15 代码审计 P0/P1 修复补充
+
+基于代码审计报告与复核意见，新增以下修复：
+
+### 并发写入保护
+
+`/api/state` 现在返回 `version`，前端保存时必须随 PUT 回传该版本。后端在同一个 `better-sqlite3` 同步事务中重新计算当前版本并校验：
+
+- 版本一致：允许保存，并在响应中返回新的 `version`；前端 `applyState()` 会同步更新 `STATE_VERSION`。
+- 版本不一致：返回 `409 Conflict`，提示“数据已被其他人更新，请刷新后重试”。
+
+这避免了多人同时打开页面时后保存者静默覆盖先保存者数据。它仍不是最终的真并发模型；完整解决方案仍是后续改增量接口。
+
+### 比分合法性校验
+
+后端新增 `validateScoreByType()`，前端也增加同等校验以提前提示：
+
+- 抢 7：7 分封顶且净胜至少 2，延长后必须净胜 2。
+- 抢 11：11 分封顶且净胜至少 2，延长后必须净胜 2。
+- 四局短盘：按设计稿“四局短盘 4/5 局封顶均允许”，允许 `4:0–4:3` 或 `5:0–5:4`。
+- 标准一盘：允许 `6:0–6:4`、`7:5`、`7:6`。
+
+### 登录加固与真实客户端 IP
+
+新增环境变量：
+
+```text
+TENNIS_COOKIE_SECURE=1
+TENNIS_TRUST_PROXY=1
+TENNIS_LOGIN_WINDOW_MS=60000
+TENNIS_LOGIN_MAX_FAILURES=8
+```
+
+- 登录密码比较改为哈希后 `crypto.timingSafeEqual`。
+- 同一客户端 IP 每分钟最多 8 次失败登录；超限返回 429。
+- 当 `TENNIS_TRUST_PROXY=1` 时，限流与审计 IP 优先读取 `CF-Connecting-IP`，再读取 `X-Forwarded-For` 第一个 IP。仅在当前部署确实位于 Cloudflare Tunnel/可信反代之后时启用，避免伪造请求头绕过限流。
+- 当 `TENNIS_COOKIE_SECURE=1` 时，登录 Cookie 增加 `Secure`。
+
+当前按用户要求，线上管理密码暂不变；仓库文件只保留占位符，不提交真实密码。
+
+### 操作审计日志
+
+新增 `audit_log` 表，记录：
+
+- 登录成功/失败/限流
+- 登出
+- 保存成功
+- 版本冲突
+- 保存失败
+
+审计详情包含保存前后 players/matches 数量和 state 短摘要/版本。即使数量不变，也能从版本/hash 判断状态发生过变化。
+
+### 测试
+
+新增 `scripts/smoke-test.mjs`，覆盖：
+
+- 各赛制合法/非法比分边界；
+- 赛制系数边界；
+- 算分零和不变量；
+- 删除后全量重算/版本变化；
+- 登录 401/200；
+- 旧版本 PUT 返回 409。
