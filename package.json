@@ -1,0 +1,12 @@
+{
+  "name": "tennis-rank-system",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.1",
+    "playwright": "^1.60.0"
+  }
+}

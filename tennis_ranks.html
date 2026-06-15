@@ -1,0 +1,832 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>球场榜 · 公司网球积分</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --court:#0C2733;        /* 球场深底 */
+    --court-2:#102F3D;      /* 卡片面 */
+    --court-3:#15394A;      /* 更亮的面 */
+    --line:#ECF3EF;         /* 粉线白 */
+    --muted:#7E98A3;        /* 次要文字 */
+    --faint:#3A5663;        /* 极淡分隔 */
+    --ball:#D7E64B;         /* 网球荧光黄 */
+    --ball-deep:#BFD235;
+    --ink:#071A23;          /* 黄底上的深字 */
+    --loss:#5A7783;
+    --danger:#E2725B;       /* 红土色，用于删除 */
+    --sky:#57B8D9;          /* 录入蓝 */
+    --clay:#D8865A;         /* 最近比赛红土 */
+    --grass:#79C989;        /* 球员草绿 */
+    --gold:#E8C45B;         /* 权限金 */
+    --radius:14px;
+    --tab-h:64px;
+    --maxw:560px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--court);color:var(--line);
+    font-family:Inter,system-ui,-apple-system,sans-serif;
+    font-size:16px;line-height:1.45;
+    -webkit-font-smoothing:antialiased}
+  body{max-width:var(--maxw);margin:0 auto;
+    padding:0 16px calc(var(--tab-h) + env(safe-area-inset-bottom) + 24px);
+    min-height:100vh;
+    background-image:
+      linear-gradient(0deg,transparent 0,transparent calc(100% - 1px),rgba(236,243,239,.05) 100%),
+      radial-gradient(140% 80% at 50% -10%,rgba(215,230,75,.07),transparent 60%);
+  }
+  h1,h2,h3{font-family:"Saira Condensed",sans-serif;font-weight:600;
+    letter-spacing:.3px;margin:0}
+  .mono{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input,select{font-family:inherit;font-size:16px}
+  :focus-visible{outline:2px solid var(--ball);outline-offset:2px;border-radius:8px}
+
+  /* ---------- header ---------- */
+  header{padding:22px 2px 12px;position:relative}
+  header .eyebrow{font-size:11px;letter-spacing:3px;text-transform:uppercase;
+    color:var(--ball);font-weight:600}
+  header h1{font-size:34px;line-height:1;margin-top:4px}
+  header h1 .net{color:var(--muted);font-weight:500}
+  .baseline{height:2px;margin:14px 0 0;
+    background:linear-gradient(90deg,var(--ball) 0,var(--ball) 30%,var(--faint) 30%,var(--faint) 100%)}
+
+  /* ---------- views ---------- */
+  .view{display:none;animation:fade .25s ease}
+  .view.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.view{animation:none}}
+
+  /* ---------- segmented (mode toggle) ---------- */
+  .seg{display:flex;gap:4px;background:linear-gradient(135deg,rgba(236,243,239,.035),var(--court-2));
+    border:1px solid rgba(236,243,239,.04);border-radius:12px;padding:4px;margin:18px 0}
+  .seg button{--mode-accent:var(--ball);--mode-rgb:215,230,75;
+    flex:1;padding:9px 6px;border-radius:9px;color:var(--muted);
+    font-family:"Saira Condensed",sans-serif;font-size:16px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;gap:7px;
+    background:linear-gradient(135deg,rgba(var(--mode-rgb),.10),rgba(var(--mode-rgb),.025))}
+  .seg button.mode-singles{--mode-accent:var(--sky);--mode-rgb:87,184,217}
+  .seg button[aria-pressed="true"]{background:linear-gradient(135deg,rgba(var(--mode-rgb),.20),var(--court-3));
+    color:var(--line);box-shadow:inset 0 0 0 1px rgba(var(--mode-rgb),.28)}
+  .seg button[aria-pressed="true"] svg .a{stroke:var(--mode-accent)}
+  .seg svg{width:22px;height:15px;flex:none}
+  .seg svg rect,.seg svg line{stroke:var(--muted);stroke-width:1.3;fill:none}
+  .mode-scope{--view-accent:var(--ball);--view-rgb:215,230,75}
+  .mode-scope.singles{--view-accent:var(--sky);--view-rgb:87,184,217}
+
+  /* ---------- leaderboard ---------- */
+  .lb-head{display:flex;justify-content:space-between;align-items:baseline;margin:2px 0 10px;
+    padding:12px 14px;border-radius:13px;border-left:4px solid var(--view-accent);
+    background:linear-gradient(135deg,rgba(var(--view-rgb),.14),rgba(16,47,61,.72))}
+  .lb-head h2{font-size:20px}
+  .lb-head .count{font-size:12px;color:var(--muted)}
+  .row{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;
+    background:linear-gradient(135deg,rgba(var(--view-rgb),.035),var(--court-2));
+    border-radius:var(--radius);padding:13px 14px;margin-bottom:9px;
+    border-left:3px solid rgba(var(--view-rgb),.18)}
+  .row.top{border-left-color:var(--view-accent);
+    background:linear-gradient(90deg,rgba(var(--view-rgb),.14),var(--court-2) 60%)}
+  .rank{font-family:"Saira Condensed",sans-serif;font-weight:700;font-size:28px;
+    line-height:1;color:var(--muted);text-align:center}
+  .row.top .rank{color:var(--view-accent)}
+  .who .name{font-weight:600;font-size:17px;letter-spacing:.2px}
+  .who .sub{display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap}
+  .chip{font-size:11px;padding:2px 7px;border-radius:999px;background:var(--court-3);
+    color:var(--muted);white-space:nowrap}
+  .chip.stable{color:var(--view-accent)}
+  .chip.inactive{color:var(--loss)}
+  .wl{font-size:12px;color:var(--muted)}
+  .wl b{color:var(--line);font-weight:600}
+  .form{display:flex;gap:3px;margin-top:6px}
+  .form i{width:7px;height:7px;border-radius:2px;background:var(--loss);opacity:.55}
+  .form i.w{background:var(--view-accent);opacity:1}
+  .elo{text-align:right}
+  .elo .val{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:22px}
+  .elo .lbl{font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+
+  /* ---------- forms ---------- */
+  .card{background:var(--court-2);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+  .module-card{position:relative;overflow:hidden;border:1px solid rgba(236,243,239,.04)}
+  .module-card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent,var(--ball))}
+  .module-card:after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(135deg,rgba(var(--accent-rgb,215,230,75),.16),transparent 42%),
+      linear-gradient(180deg,rgba(255,255,255,.025),transparent 38%)}
+  .module-card>*{position:relative;z-index:1}
+  .auth-card{--accent:var(--gold);--accent-rgb:232,196,91;
+    background:linear-gradient(135deg,rgba(232,196,91,.12),var(--court-2) 54%)}
+  .record-card{--accent:var(--sky);--accent-rgb:87,184,217;
+    background:linear-gradient(135deg,rgba(87,184,217,.13),var(--court-2) 50%)}
+  #view-record.mode-scope.doubles .record-card{--accent:var(--ball);--accent-rgb:215,230,75;
+    background:linear-gradient(135deg,rgba(215,230,75,.12),var(--court-2) 50%)}
+  #view-record.mode-scope.singles .record-card{--accent:var(--sky);--accent-rgb:87,184,217;
+    background:linear-gradient(135deg,rgba(87,184,217,.15),var(--court-2) 50%)}
+  .recent-card{--accent:var(--clay);--accent-rgb:216,134,90;
+    background:linear-gradient(135deg,rgba(216,134,90,.13),var(--court-2) 52%)}
+  .player-card{--accent:var(--grass);--accent-rgb:121,201,137;
+    background:linear-gradient(135deg,rgba(121,201,137,.13),var(--court-2) 52%)}
+  .module-title{display:flex;align-items:center;gap:8px;color:var(--line)}
+  .module-title:before{content:"";width:9px;height:9px;border-radius:2px;background:var(--accent,var(--ball));
+    box-shadow:0 0 0 3px rgba(var(--accent-rgb,215,230,75),.14)}
+  label.fld{display:block;margin-bottom:13px}
+  label.fld>span{display:block;font-size:12px;letter-spacing:.5px;color:var(--muted);
+    margin-bottom:6px;text-transform:uppercase;font-weight:600}
+  .control{width:100%;background:var(--court);border:1px solid var(--faint);
+    color:var(--line);padding:12px 13px;border-radius:11px;min-height:48px}
+  select.control{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237E98A3' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+  .vs-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:end}
+  .vs-grid .mid{padding-bottom:13px;font-family:"Saira Condensed";font-weight:700;
+    color:var(--muted);font-size:15px}
+  .team-box{padding:11px;border-radius:13px;background:rgba(7,26,35,.28);
+    border:1px solid rgba(var(--team-rgb,215,230,75),.38);
+    box-shadow:inset 0 0 0 1px rgba(var(--team-rgb,215,230,75),.06)}
+  .team-box.a{--team-rgb:215,230,75;background:linear-gradient(135deg,rgba(215,230,75,.10),rgba(7,26,35,.22))}
+  .team-box.b{--team-rgb:87,184,217;background:linear-gradient(135deg,rgba(87,184,217,.12),rgba(7,26,35,.22))}
+  .team-tag{font-size:12px;letter-spacing:.5px;color:var(--muted);margin-bottom:6px;
+    text-transform:uppercase;font-weight:600;display:block}
+  .team-tag.a{color:var(--ball)}
+  .team-tag.b{color:var(--sky)}
+  .stack>*{margin-bottom:8px}
+  .stack>*:last-child{margin-bottom:0}
+  .score-row{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-top:4px}
+  .score-row input{text-align:center;font-family:"JetBrains Mono";font-size:22px;font-weight:700}
+  .score-row .x{color:var(--muted);font-family:"Saira Condensed";font-weight:700}
+
+  .preview{margin-top:6px;padding:13px 14px;border-radius:12px;
+    background:var(--court);border:1px dashed var(--faint);font-size:14px}
+  .preview .win{color:var(--ball);font-weight:600;font-family:"Saira Condensed";
+    font-size:16px;letter-spacing:.3px}
+  .preview ul{list-style:none;margin:9px 0 0;padding:0}
+  .preview li{display:flex;justify-content:space-between;padding:3px 0;
+    border-top:1px solid var(--faint);font-size:13px}
+  .preview li .d{font-family:"JetBrains Mono";font-weight:700}
+  .d.up{color:var(--ball)} .d.down{color:var(--loss)}
+  .form-error{margin-top:10px;padding:12px 13px;border-radius:11px;
+    background:rgba(226,114,91,.12);border:1px solid rgba(226,114,91,.45);
+    color:#F0B1A3;font-size:13px;font-weight:600}
+
+  .btn{display:block;width:100%;background:var(--ball);color:var(--ink);
+    font-family:"Saira Condensed";font-weight:700;font-size:18px;letter-spacing:.5px;
+    padding:14px;border-radius:12px;min-height:52px}
+  .btn:disabled{background:var(--court-3);color:var(--muted)}
+  .btn:active:not(:disabled){background:var(--ball-deep)}
+  .btn-row{display:flex;gap:8px}
+  .btn.ghost{background:transparent;border:1px solid var(--faint);color:var(--line)}
+
+  /* recent matches & player list */
+  .mini{font-size:14px}
+  .mini-row{display:flex;align-items:center;gap:10px;padding:11px 0;
+    border-top:1px solid var(--faint)}
+  .mini-row:first-child{border-top:none}
+  .mini-row .grow{flex:1;min-width:0}
+  .mini-row .meta{font-size:11px;color:var(--muted);display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+  .mini-row .tag{background:var(--court-3);padding:1px 6px;border-radius:6px}
+  .mini-row .sc{font-family:"JetBrains Mono";font-weight:700;color:var(--ball);white-space:nowrap}
+  .mini-row .ww{font-weight:600}.mini-row .ll{color:var(--muted)}
+  .icon-btn{width:36px;height:36px;border-radius:9px;color:var(--muted);
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .icon-btn:active{background:var(--court-3)}
+  .icon-btn.del:active{color:var(--danger)}
+
+  .p-row{display:flex;align-items:center;gap:12px;padding:13px 0;border-top:1px solid var(--faint)}
+  .p-row:first-child{border-top:none}
+  .p-row .pname{flex:1;font-weight:600;font-size:16px}
+  .p-row .ratings{display:flex;gap:14px;text-align:right}
+  .p-row .ratings div{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+  .p-row .ratings b{display:block;font-family:"JetBrains Mono";font-size:16px;color:var(--line);font-weight:700}
+
+  .empty{text-align:center;color:var(--muted);padding:34px 16px;font-size:14px}
+  .empty .big{font-family:"Saira Condensed";font-size:20px;color:var(--line);
+    font-weight:600;margin-bottom:6px}
+
+  .note{font-size:11.5px;color:var(--muted);text-align:center;margin:14px 2px 0;line-height:1.5}
+
+  /* ---------- bottom nav ---------- */
+  nav{position:fixed;left:0;right:0;bottom:0;height:calc(var(--tab-h) + env(safe-area-inset-bottom));
+    padding-bottom:env(safe-area-inset-bottom);
+    background:rgba(8,26,35,.92);backdrop-filter:blur(12px);
+    border-top:1px solid var(--faint);display:flex;z-index:20}
+  nav button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:3px;color:var(--muted);font-size:11px;font-weight:500}
+  nav button svg{width:23px;height:23px;stroke:currentColor;stroke-width:1.7;fill:none}
+  nav button[aria-pressed="true"]{color:var(--ball)}
+
+  /* toast */
+  #toast{position:fixed;left:50%;bottom:calc(var(--tab-h) + env(safe-area-inset-bottom) + 16px);
+    transform:translateX(-50%) translateY(20px);background:var(--ball);color:var(--ink);
+    font-family:"Saira Condensed";font-weight:600;padding:11px 20px;border-radius:11px;
+    opacity:0;pointer-events:none;transition:.3s;z-index:40;max-width:88vw;text-align:center}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.err{background:var(--danger);color:#fff}
+
+  .spinner{width:30px;height:30px;border:3px solid var(--faint);border-top-color:var(--ball);
+    border-radius:50%;animation:spin 1s linear infinite;margin:50px auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+
+<header>
+  <div class="eyebrow">公司网球 · 积分</div>
+  <h1>球场<span class="net">榜</span></h1>
+  <div class="baseline"></div>
+</header>
+
+<div id="boot"><div class="spinner"></div></div>
+
+<main id="app" style="display:none">
+
+  <!-- ============ 排行榜 ============ -->
+  <section id="view-board" class="view active mode-scope doubles">
+    <div class="seg" role="group" aria-label="选择模式">
+      <button id="m-doubles" class="mode-doubles" aria-pressed="true" onclick="setMode('doubles')">
+        <svg viewBox="0 0 22 15"><rect class="a" x="1" y="1" width="20" height="13" rx="1"/><line class="a" x1="11" y1="1" x2="11" y2="14"/><line x1="4" y1="1" x2="4" y2="14"/><line x1="18" y1="1" x2="18" y2="14"/></svg>
+        双打
+      </button>
+      <button id="m-singles" class="mode-singles" aria-pressed="false" onclick="setMode('singles')">
+        <svg viewBox="0 0 22 15"><rect class="a" x="4" y="1" width="14" height="13" rx="1"/><line class="a" x1="11" y1="1" x2="11" y2="14"/></svg>
+        单打
+      </button>
+    </div>
+    <div class="lb-head">
+      <h2 id="board-title">双打排行</h2>
+      <span class="count" id="board-count"></span>
+    </div>
+    <div id="board-list"></div>
+    <p class="note">排序：Elo 积分 › 胜率 › 场均净优势 › 近 10 场。<br>积分严格零和，K=24，初始 1500。数据由所有打开此页的人共享。</p>
+  </section>
+
+  <!-- ============ 录入比赛 ============ -->
+  <section id="view-record" class="view mode-scope doubles">
+    <div class="seg" role="group" aria-label="选择模式">
+      <button id="rm-doubles" class="mode-doubles" aria-pressed="true" onclick="setRecMode('doubles')">
+        <svg viewBox="0 0 22 15"><rect class="a" x="1" y="1" width="20" height="13" rx="1"/><line class="a" x1="11" y1="1" x2="11" y2="14"/><line x1="4" y1="1" x2="4" y2="14"/><line x1="18" y1="1" x2="18" y2="14"/></svg>
+        双打
+      </button>
+      <button id="rm-singles" class="mode-singles" aria-pressed="false" onclick="setRecMode('singles')">
+        <svg viewBox="0 0 22 15"><rect class="a" x="4" y="1" width="14" height="13" rx="1"/><line class="a" x1="11" y1="1" x2="11" y2="14"/></svg>
+        单打
+      </button>
+    </div>
+
+    <div class="card module-card auth-card" id="auth-card">
+      <h2 class="module-title" style="font-size:18px;margin-bottom:6px">录入权限</h2>
+      <p class="note" id="auth-note" style="text-align:left;margin:0 0 12px">输入密码后可新增比赛、删除比赛和维护球员。</p>
+      <div class="btn-row" id="auth-login-row">
+        <input class="control" id="f-pass" type="password" placeholder="输入密码" style="flex:1"
+          onkeydown="if(event.key==='Enter')login()">
+        <button class="btn" style="width:auto;padding:0 22px" onclick="login()">解锁</button>
+      </div>
+      <div class="btn-row" id="auth-logout-row" style="display:none">
+        <button class="btn ghost" style="width:auto;padding:0 22px" onclick="logout()">退出录入权限</button>
+      </div>
+    </div>
+
+    <div id="record-panel">
+    <div class="card module-card record-card">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="fld"><span>日期</span><input type="date" id="f-date" class="control"></label>
+        <label class="fld"><span>赛制</span>
+          <select id="f-type" class="control" onchange="renderPreview()">
+            <option value="standard_set">标准一盘</option>
+            <option value="short4">四局短盘</option>
+            <option value="tiebreak11">抢 11</option>
+            <option value="tiebreak7">抢 7</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="vs-grid">
+        <div class="team-box a">
+          <span class="team-tag a">A 队</span>
+          <div class="stack" id="team-a"></div>
+        </div>
+        <div class="mid">VS</div>
+        <div class="team-box b">
+          <span class="team-tag b">B 队</span>
+          <div class="stack" id="team-b"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px">
+        <span class="team-tag" style="color:var(--muted)">比分</span>
+        <div class="score-row">
+          <input class="control" id="f-sa" type="number" inputmode="numeric" min="0" placeholder="A" oninput="renderPreview()">
+          <span class="x">:</span>
+          <input class="control" id="f-sb" type="number" inputmode="numeric" min="0" placeholder="B" oninput="renderPreview()">
+        </div>
+      </div>
+
+      <label class="fld" style="margin-top:14px"><span>备注（可选）</span>
+        <input class="control" id="f-note" placeholder="例如：午休局">
+      </label>
+
+      <div id="preview"></div>
+      <button class="btn" id="save-btn" style="margin-top:14px" onclick="saveMatch()">保存比赛</button>
+    </div>
+
+    <div class="card module-card recent-card">
+      <h2 class="module-title" style="font-size:18px;margin-bottom:4px">最近录入</h2>
+      <div id="recent-list" class="mini"></div>
+    </div>
+    </div>
+  </section>
+
+  <!-- ============ 球员 ============ -->
+<section id="view-players" class="view">
+    <div class="card module-card auth-card" id="auth-card-players">
+      <h2 class="module-title" style="font-size:18px;margin-bottom:6px">录入权限</h2>
+      <p class="note" id="auth-note-players" style="text-align:left;margin:0 0 12px">输入密码后可新增比赛、删除比赛和维护球员。</p>
+      <div class="btn-row" id="auth-login-row-players">
+        <input class="control" id="f-pass-players" type="password" placeholder="输入密码" style="flex:1"
+          onkeydown="if(event.key==='Enter')login('players')">
+        <button class="btn" style="width:auto;padding:0 22px" onclick="login('players')">解锁</button>
+      </div>
+      <div class="btn-row" id="auth-logout-row-players" style="display:none">
+        <button class="btn ghost" style="width:auto;padding:0 22px" onclick="logout()">退出录入权限</button>
+      </div>
+    </div>
+    <div class="card module-card player-card" id="player-write-card">
+      <label class="fld" style="margin-bottom:10px"><span>新增球员</span>
+        <div class="btn-row">
+          <input class="control" id="f-pname" placeholder="球员姓名" style="flex:1"
+            onkeydown="if(event.key==='Enter')addPlayer()">
+          <button class="btn" style="width:auto;padding:0 22px" onclick="addPlayer()">添加</button>
+        </div>
+      </label>
+      <p class="note" style="text-align:left;margin-top:2px">姓名不可重复。有比赛记录的球员不能删除（会影响历史积分）。</p>
+    </div>
+    <div class="card module-card player-card">
+      <h2 class="module-title" style="font-size:18px;margin-bottom:4px">全部球员</h2>
+      <div id="players-list"></div>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button id="nav-board" aria-pressed="true" onclick="show('board')">
+    <svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-6m5 6V8"/></svg>排行榜
+  </button>
+  <button id="nav-record" aria-pressed="false" onclick="show('record')">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>录入
+  </button>
+  <button id="nav-players" aria-pressed="false" onclick="show('players')">
+    <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0111 0M16 11h5m-2.5-2.5v5"/></svg>球员
+  </button>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+/* ====================== 积分引擎 ====================== */
+const K = 24, INIT = 1500;
+const WEIGHT = { tiebreak7:0.45, tiebreak11:0.60, short4:0.80, standard_set:1.00 };
+const TYPE_NAME = { tiebreak7:"抢7", tiebreak11:"抢11", short4:"四局短盘", standard_set:"标准一盘" };
+
+function expected(rTeam, rOpp){ return 1/(1 + Math.pow(10,(rOpp-rTeam)/400)); }
+
+function scoreMult(type, sa, sb){
+  const w = Math.max(sa,sb), l = Math.min(sa,sb), d = w - l;
+  if(type==="tiebreak7")  return d<=2?0.90 : d===3?1.00 : d<=5?1.10 : 1.20;
+  if(type==="tiebreak11") return d<=2?0.90 : d<=4?1.00 : d<=6?1.10 : 1.20;
+  if(type==="short4")     return ({1:0.90,2:1.00,3:1.12})[d] ?? 1.20;
+  if(type==="standard_set"){
+    const t={"7,6":0.85,"7,5":0.95,"6,4":1.00,"6,3":1.08,"6,2":1.15,"6,1":1.20,"6,0":1.25};
+    return t[`${w},${l}`] ?? ({1:0.85,2:0.95,3:1.08,4:1.15,5:1.20}[d] ?? 1.25);
+  }
+  return 1.0;
+}
+
+// 计算一场四/两人的积分变化（ratings: {id:分}）
+function matchDeltas(ratings, m){
+  const ra = avg(m.a.map(id=>ratings[id])), rb = avg(m.b.map(id=>ratings[id]));
+  const eA = expected(ra,rb), eB = 1-eA;
+  const f = K * WEIGHT[m.type] * scoreMult(m.type, m.sa, m.sb);
+  const aWin = m.sa > m.sb;
+  const out = {};
+  m.a.forEach(id => out[id] = { e:eA, s:aWin?1:0, delta:f*((aWin?1:0)-eA) });
+  m.b.forEach(id => out[id] = { e:eB, s:aWin?0:1, delta:f*((aWin?0:1)-eB) });
+  return out;
+}
+
+// 重放某模式全部比赛，返回每位球员的统计
+function standings(players, matches, mode){
+  const r = {}, stat = {};
+  players.forEach(p => { r[p.id]=INIT;
+    stat[p.id]={id:p.id, name:p.name, rating:INIT, w:0, l:0, n:0, ndSum:0, form:[], last:null}; });
+  matches.filter(m=>m.mode===mode)
+    .sort((x,y)=> (x.date+x.id).localeCompare(y.date+y.id))
+    .forEach(m=>{
+      const d = matchDeltas(r, m);
+      const aWin = m.sa>m.sb;
+      [...m.a,...m.b].forEach(id=>{
+        if(!stat[id]) return;               // 已删除球员的历史，跳过显示
+        r[id]+=d[id].delta;
+        const s=stat[id]; s.rating=r[id]; s.n++;
+        const onA=m.a.includes(id);
+        const win = onA?aWin:!aWin;
+        win? s.w++ : s.l++;
+        const own=onA?m.sa:m.sb, opp=onA?m.sb:m.sa;
+        if(own+opp>0) s.ndSum += (own-opp)/(own+opp);
+        s.form.push(win?'w':'l'); s.last=m.date;
+      });
+    });
+  return stat;
+}
+
+function statusLabel(n,last){
+  if(last){ const days=(Date.now()-new Date(last+"T00:00:00").getTime())/864e5;
+    if(days>60) return ["非活跃","inactive"]; }
+  if(n>=10) return ["稳定","stable"];
+  if(n>=4)  return ["观察中",""];
+  if(n>=1)  return ["样本少",""];
+  return ["新登记",""];
+}
+
+const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
+let tempId = -1;
+const uid = () => tempId--;
+const today = () => new Date().toISOString().slice(0,10);
+
+/* ====================== 数据存取 ====================== */
+let PLAYERS=[], MATCHES=[];
+let mode="doubles", recMode="doubles", curView="board", CAN_WRITE=false;
+
+async function api(path, opts={}){
+  const res = await fetch(path, {
+    credentials:"include",
+    headers:{ "Content-Type":"application/json", ...(opts.headers||{}) },
+    ...opts
+  });
+  const raw = await res.text();
+  let data = null;
+  if(raw){
+    try{ data = JSON.parse(raw); }
+    catch(e){ data = { message: raw }; }
+  }
+  if(!res.ok) throw new Error((data && (data.error || data.message)) || res.statusText);
+  return data;
+}
+
+async function load(){
+  const [state, me] = await Promise.all([
+    api("/api/state"),
+    api("/api/me")
+  ]);
+  PLAYERS = Array.isArray(state.players) ? state.players : [];
+  MATCHES = Array.isArray(state.matches) ? state.matches : [];
+  CAN_WRITE = !!(me && me.canWrite);
+}
+async function persistState(){
+  if(!CAN_WRITE){ toast("请先输入密码", true); return false; }
+  return await api("/api/state", {
+    method:"PUT",
+    body: JSON.stringify({ players: PLAYERS, matches: MATCHES })
+  });
+}
+function applyState(state){
+  if(state && Array.isArray(state.players)) PLAYERS = state.players;
+  if(state && Array.isArray(state.matches)) MATCHES = state.matches;
+}
+function refreshAfterSave(){
+  renderBoard();
+  if(curView === "record" && CAN_WRITE){
+    renderTeamInputs();
+    renderPreview();
+    renderRecent();
+  }
+  if(curView === "players") renderPlayers();
+}
+async function savePlayers(){
+  try{
+    const state = await persistState();
+    applyState(state);
+    refreshAfterSave();
+    return state;
+  }catch(e){ toast(e.message || "保存失败，请重试", true); throw e; }
+}
+async function saveMatches(){
+  try{
+    const state = await persistState();
+    applyState(state);
+    refreshAfterSave();
+    return state;
+  }catch(e){ toast(e.message || "保存失败，请重试", true); throw e; }
+}
+function requireWrite(){
+  if(CAN_WRITE) return true;
+  toast("请先输入密码解锁录入权限", true);
+  return false;
+}
+function renderAccess(){
+  const notes = ["auth-note","auth-note-players"].map(id=>document.getElementById(id)).filter(Boolean);
+  const loginRows = ["auth-login-row","auth-login-row-players"].map(id=>document.getElementById(id)).filter(Boolean);
+  const logoutRows = ["auth-logout-row","auth-logout-row-players"].map(id=>document.getElementById(id)).filter(Boolean);
+  const panel = document.getElementById("record-panel");
+  const playerCard = document.getElementById("player-write-card");
+  if(!notes.length || !loginRows.length || !logoutRows.length || !panel) return;
+  if(CAN_WRITE){
+    notes.forEach(note=>note.textContent = "当前已解锁录入权限，可以新增比赛、删除比赛和维护球员。");
+    loginRows.forEach(row=>row.style.display = "none");
+    logoutRows.forEach(row=>row.style.display = "flex");
+    panel.style.display = "block";
+    if(playerCard) playerCard.style.display = "block";
+  }else{
+    notes.forEach(note=>note.textContent = "输入密码后可新增比赛、删除比赛和维护球员。");
+    loginRows.forEach(row=>row.style.display = "flex");
+    logoutRows.forEach(row=>row.style.display = "none");
+    panel.style.display = "none";
+    if(playerCard) playerCard.style.display = "none";
+  }
+}
+async function login(area="record"){
+  const inp = document.getElementById(area==="players" ? "f-pass-players" : "f-pass");
+  const password = inp.value.trim();
+  if(!password){ toast("请输入密码", true); return; }
+  await api("/api/login", { method:"POST", body: JSON.stringify({ password }) });
+  ["f-pass","f-pass-players"].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=""; });
+  CAN_WRITE = true;
+  renderAccess();
+  if(curView === "record"){
+    renderTeamInputs();
+    renderPreview();
+    renderRecent();
+  }
+  renderPlayers();
+  toast("已解锁录入权限");
+}
+async function logout(){
+  await api("/api/logout", { method:"POST" });
+  CAN_WRITE = false;
+  renderAccess();
+  if(curView === "record"){
+    const preview = document.getElementById("preview");
+    const recent = document.getElementById("recent-list");
+    if(preview) preview.innerHTML = "";
+    if(recent) recent.innerHTML = "";
+  }
+  renderPlayers();
+  toast("已退出");
+}
+
+/* ====================== 视图切换 ====================== */
+function show(v){
+  curView=v;
+  ["board","record","players"].forEach(x=>{
+    document.getElementById("view-"+x).classList.toggle("active",x===v);
+    document.getElementById("nav-"+x).setAttribute("aria-pressed",x===v);
+  });
+  if(v==="board") renderBoard();
+  if(v==="record"){
+    renderAccess();
+    if(CAN_WRITE){
+      renderTeamInputs();
+      renderPreview();
+      renderRecent();
+    }
+  }
+  if(v==="players"){ renderAccess(); renderPlayers(); }
+  window.scrollTo(0,0);
+}
+function syncModeVisuals(sectionId, mm){
+  const section = document.getElementById(sectionId);
+  if(!section) return;
+  section.classList.toggle("doubles", mm==="doubles");
+  section.classList.toggle("singles", mm==="singles");
+}
+function setMode(mm){ mode=mm;
+  document.getElementById("m-doubles").setAttribute("aria-pressed",mm==="doubles");
+  document.getElementById("m-singles").setAttribute("aria-pressed",mm==="singles");
+  syncModeVisuals("view-board", mm);
+  renderBoard();
+}
+function setRecMode(mm){ recMode=mm;
+  document.getElementById("rm-doubles").setAttribute("aria-pressed",mm==="doubles");
+  document.getElementById("rm-singles").setAttribute("aria-pressed",mm==="singles");
+  syncModeVisuals("view-record", mm);
+  if(!CAN_WRITE) return;
+  renderTeamInputs(); renderPreview();
+}
+
+/* ====================== 排行榜 ====================== */
+function renderBoard(){
+  document.getElementById("board-title").textContent = (mode==="doubles"?"双打":"单打")+"排行";
+  const stat = standings(PLAYERS, MATCHES, mode);
+  const rows = Object.values(stat).filter(s=>s.n>0).sort((a,b)=>{
+    const wr=s=>s.n?s.w/s.n:0, nd=s=>s.n?s.ndSum/s.n:0,
+          r10=s=>{const f=s.form.slice(-10);return f.filter(x=>x==='w').length - f.filter(x=>x==='l').length;};
+    return b.rating-a.rating || wr(b)-wr(a) || nd(b)-nd(a) || r10(b)-r10(a);
+  });
+  document.getElementById("board-count").textContent = rows.length?`${rows.length} 位`:"";
+  const el = document.getElementById("board-list");
+  if(!rows.length){ el.innerHTML =
+    `<div class="empty"><div class="big">还没有${mode==="doubles"?"双打":"单打"}记录</div>去“录入”里记下第一场比赛吧。</div>`;
+    return; }
+  el.innerHTML = rows.map((s,i)=>{
+    const wr = s.n? Math.round(s.w/s.n*100):0;
+    const [lab,cls] = statusLabel(s.n,s.last);
+    const dots = s.form.slice(-10).map(x=>`<i class="${x==='w'?'w':''}"></i>`).join("");
+    return `<div class="row ${i===0?'top':''}">
+      <div class="rank">${i+1}</div>
+      <div class="who">
+        <div class="name">${esc(s.name)}</div>
+        <div class="sub">
+          <span class="chip ${cls}">${lab}</span>
+          <span class="wl"><b>${s.w}</b>胜 <b>${s.l}</b>负 · ${wr}%</span>
+        </div>
+        <div class="form">${dots}</div>
+      </div>
+      <div class="elo"><div class="val">${Math.round(s.rating)}</div><div class="lbl">Elo</div></div>
+    </div>`;
+  }).join("");
+}
+
+/* ====================== 录入 ====================== */
+function playerOptions(sel){
+  const o = `<option value="">— 选择 —</option>` +
+    PLAYERS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  return o;
+}
+function renderTeamInputs(){
+  if(!CAN_WRITE) return;
+  const n = recMode==="doubles"?2:1;
+  const mk = (side,i)=>`<select class="control" id="p-${side}-${i}" onchange="renderPreview()">${playerOptions()}</select>`;
+  document.getElementById("team-a").innerHTML = Array.from({length:n},(_,i)=>mk("a",i)).join("");
+  document.getElementById("team-b").innerHTML = Array.from({length:n},(_,i)=>mk("b",i)).join("");
+}
+function gatherForm(){
+  const n = recMode==="doubles"?2:1;
+  const a=[],b=[];
+  for(let i=0;i<n;i++){ a.push(Number(val("p-a-"+i))); b.push(Number(val("p-b-"+i))); }
+  return { mode:recMode, type:val("f-type"), a, b,
+    sa:numv("f-sa"), sb:numv("f-sb"), date:val("f-date")||today(), note:val("f-note") };
+}
+function formError(m){
+  const ids=[...m.a,...m.b];
+  if(ids.some(x=>!x)) return "请选择全部球员";
+  if(new Set(ids).size!==ids.length) return "同一人不能重复出现";
+  if(m.sa===null||m.sb===null) return "请填写双方比分";
+  if(m.sa===m.sb) return "比分不能相同（必须分出胜负）";
+  return null;
+}
+function renderPreview(){
+  if(!CAN_WRITE){
+    const box=document.getElementById("preview");
+    const btn=document.getElementById("save-btn");
+    if(box) box.innerHTML="";
+    if(btn) btn.disabled=true;
+    return;
+  }
+  const m=gatherForm(), err=formError(m), box=document.getElementById("preview");
+  const btn=document.getElementById("save-btn");
+  if(err){
+    box.innerHTML=`<div class="form-error">${esc(err)}</div>`;
+    btn.disabled=true;
+    return;
+  }
+  btn.disabled=false;
+  const r={}; PLAYERS.forEach(p=>r[p.id]=INIT);
+  standings(PLAYERS,MATCHES,recMode); // 预热（确保函数存在）
+  // 用当前真实积分预览
+  const cur={}; const st=standings(PLAYERS,MATCHES,recMode);
+  PLAYERS.forEach(p=>cur[p.id]= st[p.id]? st[p.id].rating:INIT);
+  const d=matchDeltas(cur,m);
+  const nm=id=>(PLAYERS.find(p=>p.id===id)||{}).name||"?";
+  const winSide = m.sa>m.sb?"A 队":"B 队";
+  const list=[...m.a,...m.b].map(id=>{
+    const dv=d[id].delta, up=dv>=0;
+    return `<li><span>${esc(nm(id))}</span><span class="d ${up?'up':'down'}">${up?'+':''}${dv.toFixed(1)}</span></li>`;
+  }).join("");
+  box.innerHTML=`<div class="preview"><span class="win">${winSide}胜 · ${TYPE_NAME[m.type]} ${m.sa}:${m.sb}</span><ul>${list}</ul></div>`;
+}
+async function saveMatch(){
+  if(!requireWrite()) return;
+  const m=gatherForm(), err=formError(m);
+  if(err){ toast(err,true); return; }
+  MATCHES.push({ id:uid(), ...m, created_at:new Date().toISOString() });
+  try{
+    await saveMatches();
+    document.getElementById("f-sa").value="";
+    document.getElementById("f-sb").value="";
+    document.getElementById("f-note").value="";
+    refreshAfterSave();
+    toast("已保存 ✓");
+  }catch(e){
+    MATCHES = MATCHES.filter(x=>x.id!==m.id);
+  }
+}
+function renderRecent(){
+  const el=document.getElementById("recent-list");
+  const list=[...MATCHES].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,8);
+  if(!list.length){ el.innerHTML=`<div class="empty" style="padding:18px">还没有比赛记录。</div>`; return; }
+  const nm=id=>{const p=PLAYERS.find(x=>x.id===id);return p?esc(p.name):"<i>已删</i>";};
+  el.innerHTML=list.map(m=>{
+    const aWin=m.sa>m.sb;
+    const side=(ids,win)=>`<span class="${win?'ww':'ll'}">${ids.map(nm).join(" / ")}</span>`;
+    return `<div class="mini-row">
+      <div class="grow">
+        <div>${side(m.a,aWin)} <span style="color:var(--muted)">vs</span> ${side(m.b,!aWin)}</div>
+        <div class="meta"><span class="tag">${m.mode==="doubles"?"双打":"单打"}</span>
+          <span class="tag">${TYPE_NAME[m.type]}</span><span>${m.date}</span></div>
+      </div>
+      <span class="sc">${m.sa}:${m.sb}</span>
+      ${CAN_WRITE ? `<button class="icon-btn del" aria-label="删除这场比赛" onclick="delMatch(${m.id})">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5h6v2m-8 0l1 13h8l1-13"/></svg>
+      </button>` : ""}
+    </div>`;
+  }).join("");
+}
+async function delMatch(id){
+  if(!requireWrite()) return;
+  const mid = Number(id);
+  const m=MATCHES.find(x=>x.id===mid); if(!m) return;
+  if(!confirm(`删除这场比赛？\n${m.date} · ${TYPE_NAME[m.type]} ${m.sa}:${m.sb}\n删除后相关积分会自动重算。`)) return;
+  MATCHES=MATCHES.filter(x=>x.id!==mid);
+  await saveMatches();
+  toast("已删除，积分已重算");
+}
+
+/* ====================== 球员 ====================== */
+async function addPlayer(){
+  if(!requireWrite()) return;
+  const inp=document.getElementById("f-pname");
+  const name=inp.value.trim();
+  if(!name){ toast("请输入姓名",true); return; }
+  if(PLAYERS.some(p=>p.name===name)){ toast("姓名已存在",true); return; }
+  PLAYERS.push({ id:uid(), name, created_at:new Date().toISOString(), updated_at:new Date().toISOString() });
+  await savePlayers();
+  inp.value="";
+  toast("已添加 "+name);
+}
+async function renamePlayer(id){
+  if(!requireWrite()) return;
+  const pid = Number(id);
+  const p=PLAYERS.find(x=>x.id===pid); if(!p) return;
+  const name=prompt("修改姓名：",p.name); if(name===null) return;
+  const t=name.trim();
+  if(!t){ toast("姓名不能为空",true); return; }
+  if(PLAYERS.some(x=>x.name===t&&x.id!==pid)){ toast("姓名已存在",true); return; }
+  p.name=t;
+  p.updated_at = new Date().toISOString();
+  await savePlayers();
+  toast("已更新");
+}
+async function delPlayer(id){
+  if(!requireWrite()) return;
+  const pid = Number(id);
+  const used=MATCHES.some(m=>[...m.a,...m.b].map(Number).includes(pid));
+  if(used){ toast("该球员有比赛记录，不能删除",true); return; }
+  const p=PLAYERS.find(x=>x.id===pid);
+  if(!confirm(`删除球员「${p.name}」？`)) return;
+  PLAYERS=PLAYERS.filter(x=>x.id!==pid);
+  await savePlayers();
+  toast("已删除");
+}
+function renderPlayers(){
+  const el=document.getElementById("players-list");
+  if(!PLAYERS.length){ el.innerHTML=`<div class="empty"><div class="big">还没有球员</div>在上面添加第一位球员。</div>`; return; }
+  const sd=standings(PLAYERS,MATCHES,"doubles"), ss=standings(PLAYERS,MATCHES,"singles");
+  el.innerHTML=PLAYERS.map(p=>{
+    const d=sd[p.id], s=ss[p.id];
+    return `<div class="p-row">
+      <span class="pname"${CAN_WRITE ? ` onclick="renamePlayer(${p.id})"` : ""}>${esc(p.name)}</span>
+      <div class="ratings">
+        <div>双打<b>${d&&d.n?Math.round(d.rating):"—"}</b></div>
+        <div>单打<b>${s&&s.n?Math.round(s.rating):"—"}</b></div>
+      </div>
+      ${CAN_WRITE ? `<button class="icon-btn del" aria-label="删除球员" onclick="delPlayer(${p.id})">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5h6v2m-8 0l1 13h8l1-13"/></svg>
+      </button>` : ""}
+    </div>`;
+  }).join("");
+}
+
+/* ====================== 小工具 ====================== */
+function val(id){ return document.getElementById(id).value; }
+function numv(id){ const v=document.getElementById(id).value; return v===""?null:parseInt(v,10); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+let toastT;
+function toast(msg,err){ const t=document.getElementById("toast");
+  t.textContent=msg; t.className="show"+(err?" err":"");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.className=err?"err":"",1900); }
+
+/* ====================== 启动 ====================== */
+(async function(){
+  try{
+    await load();
+    document.getElementById("f-date").value=today();
+    document.getElementById("boot").style.display="none";
+    document.getElementById("app").style.display="block";
+    renderAccess();
+    if(CAN_WRITE){
+      renderTeamInputs();
+      renderPreview();
+    }
+    renderBoard();
+  }catch(e){
+    document.getElementById("boot").innerHTML = `<div class="empty"><div class="big">页面启动失败</div><div>${esc(e.message || "无法连接到后端")}</div></div>`;
+  }
+})();
+</script>

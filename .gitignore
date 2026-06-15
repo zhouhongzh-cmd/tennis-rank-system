@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+npm-debug.log
+
+# Runtime data
+data/
+*.db
+*.db-shm
+*.db-wal
+tennis-data.json
+
+# Local environment
+.env
+.env.*
