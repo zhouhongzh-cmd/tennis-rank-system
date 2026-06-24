@@ -16,3 +16,9 @@ tennis-data.json
 # Local runtime process files
 .openclaw-tennis.pid
 *.log
+
+# Local Claude Code preview config (含本地占位密码)
+.claude/
+
+# 本地图片备份目录
+项目图片备份_*/

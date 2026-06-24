@@ -21,6 +21,13 @@ const INIT = 1500;
 const K = 24;
 const WEIGHT = { tiebreak7: 0.45, tiebreak11: 0.60, short4: 0.80, standard_set: 1.00 };
 
+// 天气：服务端固定公司城市坐标（环境变量可覆盖），默认东莞东城区。不依赖浏览器定位。
+const WEATHER_LAT = process.env.TENNIS_WEATHER_LAT || '23.0430';
+const WEATHER_LON = process.env.TENNIS_WEATHER_LON || '113.7840';
+const WEATHER_CITY = process.env.TENNIS_WEATHER_CITY || '东莞东城';
+const WEATHER_TTL_MS = 45 * 60 * 1000;
+let weatherCache = null; // { payload, expires }
+
 const sessions = new Map();
 const db = new Database(DB_FILE);
 db.pragma('foreign_keys = ON');
@@ -145,6 +152,46 @@ async function readBody(req) {
   }
   if (!raw) return {};
   return JSON.parse(raw);
+}
+
+// WMO weather code → 前端标准化天气码（sunny/cloudy/overcast/rainy）+ 中文描述。
+// 无独立雪/雾主题，雪归 rainy（有降水）、雾归 overcast（低能见度阴沉），与 6 张球场图匹配。
+function mapWmoCode(code) {
+  if (code === 0) return { code: 'sunny', text: '晴' };
+  if (code === 1) return { code: 'sunny', text: '晴间多云' };
+  if (code === 2) return { code: 'cloudy', text: '多云' };
+  if (code === 3) return { code: 'overcast', text: '阴' };
+  if (code === 45 || code === 48) return { code: 'overcast', text: '雾' };
+  if (code >= 51 && code <= 57) return { code: 'rainy', text: '毛毛雨' };
+  if (code >= 61 && code <= 67) return { code: 'rainy', text: '雨' };
+  if (code >= 71 && code <= 77) return { code: 'rainy', text: '雪' };
+  if (code >= 80 && code <= 82) return { code: 'rainy', text: '阵雨' };
+  if (code >= 85 && code <= 86) return { code: 'rainy', text: '阵雪' };
+  if (code >= 95) return { code: 'rainy', text: '雷阵雨' };
+  return { code: 'unknown', text: '' };
+}
+
+async function fetchWeather() {
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(WEATHER_LAT)}`
+    + `&longitude=${encodeURIComponent(WEATHER_LON)}&current=temperature_2m,weather_code`;
+  const r = await fetch(u, { signal: AbortSignal.timeout(5000) });
+  if (!r.ok) throw new Error(`天气接口返回 ${r.status}`);
+  const data = await r.json();
+  const cur = data.current || {};
+  const mapped = mapWmoCode(Number(cur.weather_code));
+  return {
+    weatherCode: mapped.code,
+    weatherText: mapped.text,
+    temperature: cur.temperature_2m ?? null,
+    cityName: WEATHER_CITY,
+  };
+}
+
+async function getWeather() {
+  if (weatherCache && weatherCache.expires > Date.now()) return weatherCache.payload;
+  const payload = await fetchWeather();
+  weatherCache = { payload, expires: Date.now() + WEATHER_TTL_MS };
+  return payload;
 }
 
 function safeJsonForHtml(value) {
@@ -556,6 +603,16 @@ function route(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/me') {
     json(res, 200, { canWrite: authStatus(req) });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/weather') {
+    getWeather()
+      .then((payload) => json(res, 200, payload))
+      .catch((err) => {
+        console.error('[tennis] 天气获取失败:', err.message);
+        json(res, 503, { error: '天气不可用' });
+      });
     return;
   }
 

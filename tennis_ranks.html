@@ -117,8 +117,10 @@
     color:#fff;font-size:12px;font-weight:600;white-space:nowrap;
     box-shadow:0 8px 24px rgba(0,17,24,.18)}
   body.board-active .weather-badge.has-weather{display:flex}
-  .weather-badge .weather-icon{font-size:16px;line-height:1}
+  .weather-badge .weather-icon{font-size:16px;line-height:0;display:inline-flex}
+  .weather-badge .weather-icon svg{width:1.15em;height:1.15em;display:block}
   .weather-badge .weather-copy{overflow:hidden;text-overflow:ellipsis}
+  .weather-badge .weather-temp{display:none}
   body.board-active header{height:calc(104px + env(safe-area-inset-top));padding-top:calc(38px + env(safe-area-inset-top));
     display:flex;flex:none;flex-direction:column;align-items:center;text-align:center}
   body.board-active header h1{order:1;font-size:25px;font-weight:700;line-height:1.08;margin:0;
@@ -130,8 +132,12 @@
   body.board-active .weather-badge{right:8px;top:calc(33px + env(safe-area-inset-top));
     flex-direction:column;gap:1px;padding:0;border:0;background:none;box-shadow:none;
     backdrop-filter:none;-webkit-backdrop-filter:none;text-shadow:0 2px 10px rgba(0,11,20,.65)}
-  body.board-active .weather-badge .weather-icon{font-size:30px;filter:drop-shadow(0 3px 7px rgba(0,12,18,.32))}
+  body.board-active .weather-badge .weather-icon{font-size:30px;
+    filter:drop-shadow(0 2px 6px rgba(0,12,18,.45))}
   body.board-active .weather-badge .weather-copy{display:none}
+  body.board-active .weather-badge .weather-temp{display:block;margin-top:3px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-variant-numeric:tabular-nums;
+    font-size:15px;font-weight:700;line-height:1;letter-spacing:.2px;color:#fff}
 
   /* ---------- views ---------- */
   .view{display:none;animation:fade .25s ease}
@@ -176,11 +182,15 @@
     box-shadow:0 18px 45px rgba(0,18,22,.30),inset 0 1px 0 rgba(255,255,255,.08);
     backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
   body.board-active .leaderboard-panel{
+    flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+    transform:translateZ(0);isolation:isolate
+  }
+  body.board-active .lb-scroll{
     flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
     scrollbar-width:thin;scrollbar-color:rgba(220,240,232,.34) transparent
   }
-  body.board-active .leaderboard-panel::-webkit-scrollbar{width:4px}
-  body.board-active .leaderboard-panel::-webkit-scrollbar-thumb{
+  body.board-active .lb-scroll::-webkit-scrollbar{width:4px}
+  body.board-active .lb-scroll::-webkit-scrollbar-thumb{
     border-radius:999px;background:rgba(220,240,232,.34)
   }
   #view-board .lb-head{display:none}
@@ -395,6 +405,7 @@
   <div id="weather-badge" class="weather-badge" aria-label="当前天气">
     <span id="weather-icon" class="weather-icon"></span>
     <span id="weather-copy" class="weather-copy"></span>
+    <span id="weather-temp" class="weather-temp"></span>
   </div>
   <div class="baseline"></div>
 </header>
@@ -417,12 +428,14 @@
     </div>
     <div class="court-spacer" aria-hidden="true"></div>
     <div class="leaderboard-panel">
-      <div class="lb-head">
-        <h2 id="board-title">双打排行</h2>
-        <span class="count" id="board-count"></span>
+      <div class="lb-scroll">
+        <div class="lb-head">
+          <h2 id="board-title">双打排行</h2>
+          <span class="count" id="board-count"></span>
+        </div>
+        <div id="board-list"></div>
+        <p class="note">排序：Elo 积分 › 胜率 › 场均净优势 › 近 10 场。<br>积分严格零和，K=24，初始 1500。数据由所有打开此页的人共享。</p>
       </div>
-      <div id="board-list"></div>
-      <p class="note">排序：Elo 积分 › 胜率 › 场均净优势 › 近 10 场。<br>积分严格零和，K=24，初始 1500。数据由所有打开此页的人共享。</p>
     </div>
   </section>
 
@@ -623,7 +636,7 @@ const today = () => new Date().toISOString().slice(0,10);
 /* ====================== 天气主题 ====================== */
 const WEATHER_CACHE_KEY = "tennis-weather-v1";
 const WEATHER_CACHE_TTL = 45 * 60 * 1000;
-const WEATHER_API_ENDPOINT = ""; // 接入真实天气时填写同源接口，例如 /api/weather
+const WEATHER_API_ENDPOINT = "/api/weather"; // 同源后端天气接口（服务端固定城市坐标 + 缓存）
 const MOCK_WEATHER = { weatherCode:"sunny", temperature:26, weatherText:"晴天", cityName:"" };
 const WEATHER_THEMES = [
   "sunny-day","cloudy-day","overcast-day","rainy-day",
@@ -668,16 +681,48 @@ function resolveWeatherTheme(weatherCode, currentTime=new Date()){
   }[code] || "default-day";
 }
 
+function weatherIcon(kind){
+  const I = {
+    sun:`<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.6" fill="#FFD45E"/>
+      <g stroke="#FFD45E" stroke-width="2" stroke-linecap="round">
+        <path d="M12 2.4v2.3M12 19.3v2.3M21.6 12h-2.3M4.7 12H2.4M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6M18.8 18.8l-1.6-1.6M6.8 6.8 5.2 5.2"/></g></svg>`,
+    moon:`<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20.6 13.4A8.1 8.1 0 1 1 10.6 3.4a6.5 6.5 0 0 0 10 10Z" fill="#EAEFF7"/></svg>`,
+    cloud:`<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7.2 18.4h9.7a3.95 3.95 0 0 0 .45-7.87 5.85 5.85 0 0 0-11.3 1.2A3.62 3.62 0 0 0 7.2 18.4Z" fill="#DBE4ED"/></svg>`,
+    cloudSun:`<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="8.4" cy="7.6" r="3" fill="#FFD45E"/>
+      <g stroke="#FFD45E" stroke-width="1.6" stroke-linecap="round">
+        <path d="M8.4 1.8v1.7M2.6 7.6H.9M12.5 3.5l-1.2 1.2M4.3 3.5l1.2 1.2"/></g>
+      <path d="M9 19.2h7.8a3.5 3.5 0 0 0 .4-6.97 5.1 5.1 0 0 0-9.85 1A3.2 3.2 0 0 0 9 19.2Z" fill="#E6EDF5"/></svg>`,
+    rain:`<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 14.4h9.7a3.95 3.95 0 0 0 .45-7.87A5.85 5.85 0 0 0 5.85 7.7 3.62 3.62 0 0 0 7 14.4Z" fill="#DBE4ED"/>
+      <g stroke="#7FC8EC" stroke-width="2" stroke-linecap="round">
+        <path d="M8.6 17.6l-1 2.6M12.3 17.6l-1 2.6M16 17.6l-1 2.6"/></g></svg>`,
+    moonRain:`<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M17.5 8.2A5 5 0 0 1 11.4 2a6.2 6.2 0 1 0 6.1 6.2Z" fill="#EAEFF7"/>
+      <path d="M8 16.2h8.4a3.2 3.2 0 0 0 .3-6.38A4.6 4.6 0 0 0 8.1 10a3 3 0 0 0-.1 6.2Z" fill="#C9D6E2"/>
+      <g stroke="#7FC8EC" stroke-width="1.8" stroke-linecap="round">
+        <path d="M9.4 18.6l-.8 2.2M13 18.6l-.8 2.2"/></g></svg>`,
+  };
+  return I[kind] || "";
+}
+
 function weatherPresentation(code, theme){
-  if(theme === "night") return { icon:"🌙", label:code === "unknown" ? "夜间" : ({
-    sunny:"晴", cloudy:"多云", overcast:"阴", rainy:"有雨"
-  }[code] || "夜间") };
-  return {
-    sunny:{icon:"☀️",label:"晴天"},
-    cloudy:{icon:"🌤️",label:"多云"},
-    overcast:{icon:"☁️",label:"阴天"},
-    rainy:{icon:"🌧️",label:"有雨"},
-  }[code] || {icon:"",label:""};
+  if(theme === "night"){
+    const kind = code === "rainy" ? "moonRain" : "moon";
+    return { icon:weatherIcon(kind), label:code === "unknown" ? "夜间" : ({
+      sunny:"晴", cloudy:"多云", overcast:"阴", rainy:"有雨"
+    }[code] || "夜间") };
+  }
+  const map = {
+    sunny:{kind:"sun",label:"晴天"},
+    cloudy:{kind:"cloudSun",label:"多云"},
+    overcast:{kind:"cloud",label:"阴天"},
+    rainy:{kind:"rain",label:"有雨"},
+  }[code];
+  return map ? { icon:weatherIcon(map.kind), label:map.label } : { icon:"", label:"" };
 }
 
 function applyWeatherTheme(weatherCode, weatherData=null, showBadge=true){
@@ -700,14 +745,16 @@ function applyWeatherTheme(weatherCode, weatherData=null, showBadge=true){
   const badge = document.getElementById("weather-badge");
   const icon = document.getElementById("weather-icon");
   const copy = document.getElementById("weather-copy");
+  const temp = document.getElementById("weather-temp");
   const display = weatherPresentation(presentationCode, theme);
   const temperature = weatherData && weatherData.temperature != null && Number.isFinite(Number(weatherData.temperature))
     ? `${Math.round(Number(weatherData.temperature))}°C` : "";
   const text = [temperature, previewTheme ? display.label : ((weatherData && weatherData.weatherText) || display.label)]
     .filter(Boolean).join(" ");
   if(badge && icon && copy){
-    icon.textContent = display.icon;
+    icon.innerHTML = display.icon;
     copy.textContent = text;
+    if(temp) temp.textContent = temperature;
     badge.classList.toggle("has-weather", !!(showBadge && text));
   }
   return theme;
@@ -964,19 +1011,12 @@ function renderBoard(){
   el.innerHTML = rows.map((s,i)=>{
     const wr = s.n? Math.round(s.w/s.n*100):0;
     const dots = s.form.slice(-5).map(x=>`<i class="${x==='w'?'w':''}">${x.toUpperCase()}</i>`).join("");
-
-    // 计算 ELO 变动值
     const lastDeltaVal = s.lastDelta !== undefined ? Math.round(s.lastDelta) : null;
     let deltaText = "—";
     let deltaClass = "delta-stable";
     if (lastDeltaVal !== null) {
-      if (lastDeltaVal > 0) {
-        deltaText = `+${lastDeltaVal}`;
-        deltaClass = "delta-up";
-      } else if (lastDeltaVal < 0) {
-        deltaText = `${lastDeltaVal}`;
-        deltaClass = "delta-down";
-      }
+      if (lastDeltaVal > 0) { deltaText = `+${lastDeltaVal}`; deltaClass = "delta-up"; }
+      else if (lastDeltaVal < 0) { deltaText = `${lastDeltaVal}`; deltaClass = "delta-down"; }
     }
 
     return `<div class="row rank-${i+1} ${i===0?'top':''}">
