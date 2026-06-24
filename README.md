@@ -106,3 +106,24 @@ docker run -d \
 - `TENNIS_ADMIN_PASSWORD` 不要留空。
 - Docker 部署时建议挂载 `/data`，否则数据库会随着容器删除而丢失。
 - 这是单进程轻量版，适合个人或小团队使用。
+
+## 排行榜天气背景
+
+排行榜会根据浏览器本地时间与天气状态切换球场背景。当前项目没有现成天气服务，因此
+`tennis_ranks.html` 中的 `WEATHER_API_ENDPOINT` 默认为空，并使用 `MOCK_WEATHER`
+作为临时数据；天气结果会在 `localStorage` 缓存 45 分钟。
+
+接入真实接口时，将 `WEATHER_API_ENDPOINT` 改为同源天气接口（例如 `/api/weather`）。
+前端兼容以下返回字段：
+
+```json
+{
+  "weatherCode": "sunny",
+  "temperature": 26,
+  "weatherText": "晴天",
+  "cityName": "深圳"
+}
+```
+
+`weatherCode` 支持 `sunny`、`cloudy`、`overcast`、`rainy`、`unknown`。接口失败不会影响
+排行榜：白天回退 `default-day`，夜间回退 `night`，天气角标会自动隐藏。

@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
 const DB_FILE = process.env.TENNIS_DB_FILE || path.join(__dirname, 'tennis.db');
 const HTML_FILE = path.join(__dirname, 'tennis_ranks.html');
+const ASSETS_DIR = path.join(__dirname, 'assets');
 const PASSWORD = process.env.TENNIS_ADMIN_PASSWORD;
 const SESSION_COOKIE = 'tennis_auth';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -169,6 +170,44 @@ function sendHtml(res) {
       res.end(body);
     })
     .catch((err) => text(res, 500, `无法读取页面: ${err.message}`));
+}
+
+function sendAsset(res, pathname) {
+  let relativePath;
+  try {
+    relativePath = decodeURIComponent(pathname.slice('/assets/'.length));
+  } catch {
+    text(res, 400, 'Bad Request');
+    return;
+  }
+
+  const filePath = path.resolve(ASSETS_DIR, relativePath);
+  if (!filePath.startsWith(`${ASSETS_DIR}${path.sep}`)) {
+    text(res, 403, 'Forbidden');
+    return;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml; charset=utf-8',
+  }[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (err, body) => {
+    if (err) {
+      text(res, err.code === 'ENOENT' ? 404 : 500, err.code === 'ENOENT' ? 'Not Found' : '无法读取资源');
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': body.length,
+      'Cache-Control': 'public, max-age=2592000, immutable',
+    });
+    res.end(body);
+  });
 }
 
 function issueSession(res) {
@@ -484,6 +523,11 @@ function route(req, res) {
 
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/tennis_ranks.html')) {
     sendHtml(res);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/assets/')) {
+    sendAsset(res, url.pathname);
     return;
   }
 
