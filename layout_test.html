@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>球场榜 · 图文排版测试</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;background:#082c2c;color:#fff;overflow:hidden}
+    .page{
+      position:relative;isolation:isolate;width:min(100%,560px);height:100svh;margin:auto;overflow:hidden;
+      padding:calc(28px + env(safe-area-inset-top)) 16px calc(86px + env(safe-area-inset-bottom));
+      display:flex;flex-direction:column;
+      background:#082c2c;
+    }
+    .page:before{
+      content:"";position:absolute;inset:0 0 auto;z-index:-2;height:min(calc(34svh + 55px),365px);
+      background:url("assets/layout-test/court-base.png") center center/auto 100% no-repeat;
+    }
+    .page:after{
+      content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+      background:
+        linear-gradient(180deg,rgba(0,24,40,.08) 0,rgba(0,30,36,.04) calc(27svh + 55px),rgba(4,35,36,.88) calc(34svh + 55px),#082c2c calc(41svh + 55px));
+    }
+    header{text-align:center;text-shadow:0 2px 12px rgba(0,20,26,.6)}
+    h1{margin:0;font-size:26px;line-height:1.1;letter-spacing:2px}
+    .subtitle{margin:6px 0 0;font-size:12px;letter-spacing:.5px}
+    .weather{
+      position:absolute;right:17px;top:calc(27px + env(safe-area-inset-top));
+      display:grid;justify-items:center;font-size:10px;text-shadow:0 2px 8px rgba(0,15,20,.7);
+    }
+    .weather b{font-size:29px;line-height:1}
+    .switch{
+      display:grid;grid-template-columns:1fr 1fr;width:168px;height:34px;margin:19px auto 0;padding:2px;
+      border:1px solid rgba(255,255,255,.5);border-radius:999px;
+      background:rgba(222,232,231,.7);backdrop-filter:blur(8px);
+    }
+    .switch span{display:grid;place-items:center;border-radius:999px;color:#27474a;font-size:14px;font-weight:600}
+    .switch .active{color:#fff;background:linear-gradient(#38a855,#168438);box-shadow:0 2px 6px rgba(0,60,24,.3)}
+    .court-space{height:167px;flex:none}
+    .board{
+      flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+      scrollbar-width:thin;scrollbar-color:rgba(220,240,232,.34) transparent;
+      border:1px solid rgba(226,247,239,.28);border-radius:18px;padding:8px 14px;
+      background:rgba(5,48,42,.76);box-shadow:0 20px 50px rgba(0,15,20,.3);
+      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    }
+    .board::-webkit-scrollbar{width:4px}
+    .board::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(220,240,232,.34)}
+    .row{
+      height:54px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;
+      align-items:center;gap:10px;border-bottom:1px solid rgba(236,248,242,.14);
+    }
+    .row:last-child{border-bottom:0}
+    .rank{width:22px;height:22px;display:grid;place-items:center;border-radius:50%;background:#899697;font-size:12px;font-weight:700}
+    .row:first-child .rank{background:#f1b52e}
+    .row>div:nth-child(2){
+      min-width:0;display:grid;grid-template-columns:48px auto auto 1fr;
+      grid-template-rows:22px 18px;align-items:center;column-gap:9px;
+    }
+    .name{grid-column:1;grid-row:1;font-size:16px;font-weight:750;white-space:nowrap}
+    .meta{display:contents;color:rgba(239,248,244,.82);font-size:10.5px}
+    .meta>span:nth-child(1){grid-column:2;grid-row:1;white-space:nowrap;margin-left:7px}
+    .meta>span:nth-child(2){grid-column:3;grid-row:1;white-space:nowrap}
+    .meta>span:nth-child(3){grid-column:1;grid-row:2;color:rgba(239,248,244,.66);white-space:nowrap}
+    .form{grid-column:2/5;grid-row:2;display:flex;gap:3px;margin-left:7px}
+    .form i{width:15px;height:15px;display:grid;place-items:center;border-radius:4px;background:#399256;font-size:9px;font-style:normal;font-weight:700}
+    .form i.loss{background:#a85a49}
+    .score{align-self:center;text-align:right;font:700 18px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.6px}
+    .delta{margin-top:5px;color:#4fdb69;font:700 13px/1 system-ui}
+    nav{
+      position:fixed;left:50%;bottom:0;z-index:20;transform:translateX(-50%);
+      width:min(100%,560px);height:calc(66px + env(safe-area-inset-bottom));
+      padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(3,1fr);
+      background:rgba(5,27,34,.94);border-top:1px solid rgba(225,244,237,.14);
+      backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    }
+    nav button{
+      border:0;background:none;color:rgba(230,241,238,.58);font:12px system-ui;
+      display:grid;place-content:center;justify-items:center;gap:3px;
+    }
+    nav b{font-size:21px;line-height:1;font-weight:400}
+    nav .active{color:#d8e85e}
+    @media(max-height:720px){
+      .page{padding-top:calc(18px + env(safe-area-inset-top))}
+      .weather{top:calc(18px + env(safe-area-inset-top))}
+      .court-space{height:138px}
+      .row{height:51px}
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header><h1>球场榜</h1><p class="subtitle">公司网球积分</p></header>
+    <div class="weather"><b>☀️</b><span>26°C 晴天</span></div>
+    <div class="switch" aria-label="排行模式"><span class="active">双打</span><span>单打</span></div>
+    <div class="court-space" aria-hidden="true"></div>
+    <section class="board" aria-label="排行榜">
+      <div class="row">
+        <span class="rank">1</span>
+        <div><div class="name">张三</div><div class="meta"><span>胜率 75%</span><span>12胜 4负</span><span>近5场</span><span class="form"><i>W</i><i>W</i><i>W</i><i class="loss">L</i><i>W</i></span></div></div>
+        <div class="score">1560<div class="delta">+2</div></div>
+      </div>
+      <div class="row">
+        <span class="rank">2</span>
+        <div><div class="name">王五</div><div class="meta"><span>胜率 69%</span><span>11胜 5负</span><span>近5场</span><span class="form"><i>W</i><i class="loss">L</i><i>W</i><i>W</i><i class="loss">L</i></span></div></div>
+        <div class="score">1528</div>
+      </div>
+      <div class="row">
+        <span class="rank">3</span>
+        <div><div class="name">刘一</div><div class="meta"><span>胜率 63%</span><span>10胜 6负</span><span>近5场</span><span class="form"><i>W</i><i>W</i><i class="loss">L</i><i class="loss">L</i><i>W</i></span></div></div>
+        <div class="score">1493</div>
+      </div>
+      <div class="row">
+        <span class="rank">4</span>
+        <div><div class="name">孙七</div><div class="meta"><span>胜率 56%</span><span>9胜 7负</span><span>近5场</span><span class="form"><i class="loss">L</i><i>W</i><i>W</i><i class="loss">L</i><i>W</i></span></div></div>
+        <div class="score">1450</div>
+      </div>
+      <div class="row">
+        <span class="rank">5</span>
+        <div><div class="name">吴九</div><div class="meta"><span>胜率 50%</span><span>8胜 8负</span><span>近5场</span><span class="form"><i class="loss">L</i><i class="loss">L</i><i>W</i><i>W</i><i class="loss">L</i></span></div></div>
+        <div class="score">1421</div>
+      </div>
+      <div class="row">
+        <span class="rank">6</span>
+        <div><div class="name">赵六</div><div class="meta"><span>胜率 47%</span><span>7胜 8负</span><span>近5场</span><span class="form"><i>W</i><i class="loss">L</i><i class="loss">L</i><i>W</i><i class="loss">L</i></span></div></div>
+        <div class="score">1398</div>
+      </div>
+      <div class="row">
+        <span class="rank">7</span>
+        <div><div class="name">陈八</div><div class="meta"><span>胜率 43%</span><span>6胜 8负</span><span>近5场</span><span class="form"><i class="loss">L</i><i>W</i><i class="loss">L</i><i class="loss">L</i><i>W</i></span></div></div>
+        <div class="score">1376</div>
+      </div>
+      <div class="row">
+        <span class="rank">8</span>
+        <div><div class="name">周二</div><div class="meta"><span>胜率 40%</span><span>6胜 9负</span><span>近5场</span><span class="form"><i>W</i><i class="loss">L</i><i class="loss">L</i><i class="loss">L</i><i>W</i></span></div></div>
+        <div class="score">1352</div>
+      </div>
+      <div class="row">
+        <span class="rank">9</span>
+        <div><div class="name">郑十</div><div class="meta"><span>胜率 36%</span><span>5胜 9负</span><span>近5场</span><span class="form"><i class="loss">L</i><i class="loss">L</i><i>W</i><i class="loss">L</i><i class="loss">L</i></span></div></div>
+        <div class="score">1327</div>
+      </div>
+      <div class="row">
+        <span class="rank">10</span>
+        <div><div class="name">何四</div><div class="meta"><span>胜率 31%</span><span>4胜 9负</span><span>近5场</span><span class="form"><i class="loss">L</i><i>W</i><i class="loss">L</i><i class="loss">L</i><i class="loss">L</i></span></div></div>
+        <div class="score">1294</div>
+      </div>
+    </section>
+  </main>
+  <nav aria-label="主导航">
+    <button class="active"><b>♬</b><span>排行榜</span></button>
+    <button><b>＋</b><span>录入</span></button>
+    <button><b>♙</b><span>球员</span></button>
+  </nav>
+</body>
+</html>

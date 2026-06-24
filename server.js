@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
 const DB_FILE = process.env.TENNIS_DB_FILE || path.join(__dirname, 'tennis.db');
 const HTML_FILE = path.join(__dirname, 'tennis_ranks.html');
+const LAYOUT_TEST_FILE = path.join(__dirname, 'layout_test.html');
 const ASSETS_DIR = path.join(__dirname, 'assets');
 const PASSWORD = process.env.TENNIS_ADMIN_PASSWORD;
 const SESSION_COOKIE = 'tennis_auth';
@@ -170,6 +171,18 @@ function sendHtml(res) {
       res.end(body);
     })
     .catch((err) => text(res, 500, `无法读取页面: ${err.message}`));
+}
+
+function sendLayoutTest(res) {
+  readFile(LAYOUT_TEST_FILE)
+    .then((body) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': body.length,
+      });
+      res.end(body);
+    })
+    .catch((err) => text(res, 500, `无法读取测试页: ${err.message}`));
 }
 
 function sendAsset(res, pathname) {
@@ -523,6 +536,11 @@ function route(req, res) {
 
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/tennis_ranks.html')) {
     sendHtml(res);
+    return;
+  }
+
+  if (req.method === 'GET' && (url.pathname === '/layout-test' || url.pathname === '/layout_test.html')) {
+    sendLayoutTest(res);
     return;
   }
 
